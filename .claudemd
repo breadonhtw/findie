@@ -1,0 +1,1398 @@
+# Findie iOS App - Implementation Guide for Claude
+
+## Project Context
+
+Findie is a Tinder-style indie game discovery app for iOS. Users swipe through game cards to discover new indie games, manage wishlists, and connect with developers. This document outlines the systematic approach to building Findie from scratch through three phases.
+
+## Architecture Overview
+
+**Pattern**: MVVM (Model-View-ViewModel)
+**Tech Stack**: SwiftUI, Firebase (Firestore, Auth, Storage, Functions), Swift 5.9+
+**Target**: iOS 16.0+
+
+```
+Views (SwiftUI) → ViewModels (@Published) → Services → Firebase Backend
+```
+
+## Implementation Philosophy
+
+1. **Build incrementally**: Each feature must be fully functional before moving to the next
+2. **Test as you go**: Write unit tests for ViewModels and Services
+3. **User experience first**: Smooth animations, loading states, error handling
+4. **Firebase-native**: Leverage Firebase SDK best practices
+5. **Code quality**: Follow Swift conventions, use protocol-oriented design
+
+---
+
+# PHASE 1: MVP (Weeks 1-10)
+
+## Goal
+Launch a functional product that proves the core value: swipe-based indie game discovery.
+
+---
+
+## SPRINT 1: Foundation (Weeks 1-2)
+
+### Week 1: Project Setup
+
+#### Tasks
+1. **Create Xcode Project**
+   - New iOS App project targeting iOS 16+
+   - Enable SwiftUI lifecycle
+   - Configure bundle identifier: `com.findie.app`
+   - Add SPM dependencies: Firebase SDK (Auth, Firestore, Storage, Analytics)
+
+2. **Firebase Setup**
+   - Create Firebase project (Development)
+   - Download and add `GoogleService-Info.plist`
+   - Initialize Firebase in `@main App` struct
+   - Test connection with simple Firestore read
+
+3. **Project Structure**
+   ```
+   Findie/
+   ├── App/
+   │   ├── FindieApp.swift
+   │   └── ContentView.swift
+   ├── Core/
+   │   ├── Models/
+   │   ├── Services/
+   │   └── Utilities/
+   ├── Features/
+   │   ├── Auth/
+   │   ├── Discovery/
+   │   ├── Wishlist/
+   │   ├── Profile/
+   │   └── Developer/
+   ├── Shared/
+   │   ├── Components/
+   │   └── Theme/
+   └── Resources/
+   ```
+
+4. **Design System**
+   - Create `Theme/Colors.swift` with brand colors
+   - Create `Theme/Typography.swift` with text styles
+   - Create `Theme/Layout.swift` with spacing constants
+   - Create `Shared/Components/LoadingView.swift`
+   - Create `Shared/Components/ErrorView.swift`
+
+#### Success Criteria
+- [ ] Project builds successfully
+- [ ] Firebase connected (can read/write test document)
+- [ ] Design system components render correctly
+- [ ] No build warnings
+
+---
+
+### Week 2: Authentication & Onboarding
+
+#### Implementation Order
+
+1. **Models** (`Core/Models/User.swift`)
+   ```swift
+   struct User: Identifiable, Codable {
+       let id: String
+       let username: String
+       let email: String
+       var displayName: String
+       var favoriteGenres: [Genre]
+       var preferredPlatforms: [Platform]
+       // ... all fields from DATA_MODELS.md
+   }
+   ```
+
+2. **AuthService** (`Core/Services/AuthService.swift`)
+   - Implement sign up with email/password
+   - Implement sign in with email/password
+   - Implement Apple Sign In
+   - Add auth state listener
+   - Handle errors with custom `FindieError` enum
+
+3. **UserService** (`Core/Services/UserService.swift`)
+   - Create user document in Firestore
+   - Fetch current user
+   - Update user preferences
+
+4. **Auth Views** (`Features/Auth/Views/`)
+   - `LoginView.swift`: Email/password form + Apple Sign In button
+   - `SignUpView.swift`: Email/password/username form
+   - `OnboardingView.swift`: Multi-step wizard (5 screens)
+     - Welcome screen
+     - Genre selection (multi-select grid)
+     - Platform preference
+     - Price range selection
+     - Tutorial overlay
+
+5. **Auth ViewModel** (`Features/Auth/ViewModels/AuthViewModel.swift`)
+   - Handle login flow
+   - Handle signup flow
+   - Validation logic
+   - Error state management
+
+6. **App Root Logic** (`App/FindieApp.swift`)
+   - Listen to `AuthService.shared.isAuthenticated`
+   - Show `OnboardingView` if not authenticated
+   - Show main `TabView` if authenticated
+
+#### Key Considerations
+- Use `@EnvironmentObject` for `AuthService`
+- Implement proper keyboard handling in forms
+- Add input validation before Firebase calls
+- Show loading states during auth operations
+- Handle Firebase Auth errors gracefully
+
+#### Success Criteria
+- [ ] Users can sign up with email/password
+- [ ] Users can sign in with Apple ID
+- [ ] Users complete onboarding flow
+- [ ] User document created in Firestore
+- [ ] Auth state persists across app launches
+
+---
+
+## SPRINT 2: Core Discovery (Weeks 3-4)
+
+### Week 3: Game Card UI
+
+#### Implementation Order
+
+1. **Models** (`Core/Models/Game.swift`)
+   ```swift
+   struct Game: Identifiable, Codable {
+       let id: String
+       let title: String
+       let shortDescription: String
+       let coverImageURL: String
+       let genres: [Genre]
+       let tags: [String]
+       // ... all fields from DATA_MODELS.md
+   }
+   ```
+
+2. **Image Utilities** (`Core/Utilities/AsyncImageView.swift`)
+   - Wrapper around AsyncImage with caching
+   - Loading placeholder
+   - Error placeholder
+   - Fade-in animation
+
+3. **Game Card** (`Features/Discovery/Views/GameCardView.swift`)
+   - Full-screen card with cover image background
+   - Gradient overlay for text readability
+   - Game info: title, developer, genres, price
+   - Tap to expand detail view
+   - Swipe gesture recognizer
+
+4. **Swipe Overlays** (`Features/Discovery/Views/SwipeOverlayView.swift`)
+   - Like overlay (green, heart icon)
+   - Dislike overlay (red, X icon)
+   - Super Like overlay (blue, star icon)
+   - Fade based on drag distance/direction
+
+5. **Game Detail Modal** (`Features/Discovery/Views/GameDetailView.swift`)
+   - Full description
+   - Screenshot gallery (horizontal scroll)
+   - Video trailer (if available)
+   - External links (Steam, itch.io)
+   - Wishlist button
+   - Share button
+
+#### Key Techniques
+- Use `ZStack` for card layering
+- `DragGesture` with `.updating` and `.onEnded`
+- `rotationEffect` based on drag offset
+- `Animation.spring()` for smooth transitions
+- Preload next 3 images in background
+
+#### Success Criteria
+- [ ] Beautiful game cards with high-quality images
+- [ ] Smooth drag-to-swipe interactions
+- [ ] Visual feedback for like/dislike
+- [ ] Detail modal opens with sheet presentation
+- [ ] 60 FPS during swipes
+
+---
+
+### Week 4: Discovery Feed Logic
+
+#### Implementation Order
+
+1. **GameService** (`Core/Services/GameService.swift`)
+   - `fetchGames(limit: Int)` - Get active games
+   - `fetchGamesByGenres(_ genres: [Genre])` - Filter by user preferences
+   - `fetchGame(id: String)` - Get single game
+   - `incrementViewCount(gameId: String)`
+   - `incrementLikeCount(gameId: String)`
+
+2. **Simple Recommendation** (`Core/Services/RecommendationService.swift`)
+   - Phase 1 uses genre-based filtering
+   - Query games matching user's `favoriteGenres`
+   - Sort by `wishlistCount` descending
+   - Limit to 20 games per batch
+   - Cache results for 1 hour
+
+3. **Interaction Tracking** (`Core/Services/AnalyticsService.swift`)
+   - `logSwipeAction(gameId, userId, action, viewDuration)`
+   - Store in `interactions` collection
+   - Will be used for ML in Phase 2
+
+4. **DiscoveryViewModel** (`Features/Discovery/ViewModels/DiscoveryViewModel.swift`)
+   ```swift
+   @MainActor
+   class DiscoveryViewModel: ObservableObject {
+       @Published var games: [Game] = []
+       @Published var currentIndex: Int = 0
+       @Published var isLoading: Bool = false
+       @Published var error: Error?
+
+       var currentGame: Game? {
+           games.indices.contains(currentIndex) ? games[currentIndex] : nil
+       }
+
+       var upcomingGames: [Game] {
+           Array(games.dropFirst(currentIndex + 1).prefix(2))
+       }
+
+       func loadGames() async { ... }
+       func handleSwipe(_ action: SwipeAction) async { ... }
+       func prefetchNextGames() async { ... }
+   }
+   ```
+
+5. **DiscoveryView** (`Features/Discovery/Views/DiscoveryView.swift`)
+   - `ZStack` with background cards (next 2)
+   - Top card with drag gesture
+   - Pull-to-refresh to reload feed
+   - Empty state ("No more games")
+   - Filter button (top-right)
+
+#### Swipe Gesture Implementation
+```swift
+@State private var dragOffset: CGSize = .zero
+@State private var rotation: Double = 0
+
+var dragGesture: some Gesture {
+    DragGesture()
+        .onChanged { value in
+            dragOffset = value.translation
+            rotation = Double(value.translation.width / 20)
+        }
+        .onEnded { value in
+            let threshold: CGFloat = 100
+
+            if abs(value.translation.width) > threshold {
+                // Swipe left or right
+                let action: SwipeAction = value.translation.width > 0 ? .like : .dislike
+                handleSwipe(action)
+            } else if value.translation.height < -threshold {
+                // Swipe up
+                handleSwipe(.superLike)
+            } else {
+                // Reset card
+                withAnimation(.spring()) {
+                    dragOffset = .zero
+                    rotation = 0
+                }
+            }
+        }
+}
+```
+
+#### Success Criteria
+- [ ] Feed loads 20 games based on user preferences
+- [ ] Smooth swipe gestures (left/right/up)
+- [ ] Card automatically removed after swipe
+- [ ] Next card slides into place
+- [ ] Interactions logged to Firestore
+- [ ] Pull-to-refresh reloads feed
+
+---
+
+## SPRINT 3: Wishlist & Profile (Weeks 5-6)
+
+### Week 5: Wishlist Feature
+
+#### Implementation Order
+
+1. **Models** (`Core/Models/Wishlist.swift`)
+   ```swift
+   struct Wishlist: Identifiable, Codable {
+       let id: String  // userId
+       let userId: String
+       var items: [WishlistItem]
+       var lastUpdated: Date
+   }
+
+   struct WishlistItem: Identifiable, Codable {
+       let id: String
+       let gameId: String
+       let gameTitle: String
+       let gameIconURL: String
+       let addedDate: Date
+       var priority: Priority
+       var notes: String?
+   }
+   ```
+
+2. **WishlistService** (`Core/Services/WishlistService.swift`)
+   - `fetchWishlist(userId: String)` → Wishlist
+   - `addToWishlist(gameId, userId)` → Void
+   - `removeFromWishlist(gameId, userId)` → Void
+   - `updateWishlistItem(_ item, userId)` → Void
+   - Handle Firestore array updates with `FieldValue.arrayUnion/arrayRemove`
+
+3. **WishlistViewModel** (`Features/Wishlist/ViewModels/WishlistViewModel.swift`)
+   - Load wishlist on appear
+   - Add/remove items
+   - Update priority levels
+   - Real-time listener for wishlist changes
+
+4. **WishlistView** (`Features/Wishlist/Views/WishlistView.swift`)
+   - List of `WishlistItemView` rows
+   - Swipe-to-delete gesture
+   - Segmented control: All / High Priority / Medium / Low
+   - Empty state ("Your wishlist is empty")
+   - Pull-to-refresh
+
+5. **WishlistItemView** (`Features/Wishlist/Views/WishlistItemView.swift`)
+   - Game icon thumbnail
+   - Title and developer
+   - Priority badge
+   - Added date
+   - Tap to open game detail
+
+#### Success Criteria
+- [ ] Users can add games to wishlist from Discovery
+- [ ] Wishlist displays all saved games
+- [ ] Swipe-to-delete removes items
+- [ ] Priority levels work correctly
+- [ ] Wishlist syncs across app launches
+
+---
+
+### Week 6: User Profile
+
+#### Implementation Order
+
+1. **ProfileViewModel** (`Features/Profile/ViewModels/ProfileViewModel.swift`)
+   - Load current user
+   - Update display name, avatar
+   - Update preferences
+   - Track stats (games discovered, liked, wishlisted)
+
+2. **ProfileView** (`Features/Profile/Views/ProfileView.swift`)
+   - Avatar (tappable to change)
+   - Username and display name
+   - Stats cards (3 columns)
+     - Games Discovered
+     - Games Liked
+     - Wishlist Size
+   - Settings button → `SettingsView`
+
+3. **SettingsView** (`Features/Profile/Views/SettingsView.swift`)
+   - Account section
+     - Display name (editable)
+     - Email (read-only)
+     - Change password
+   - Preferences section
+     - Favorite genres (multi-select)
+     - Preferred platforms
+     - Price range
+   - Notifications section
+     - Push notifications toggle
+     - Email updates toggle
+   - Privacy section
+     - Public profile toggle
+     - Allow friend requests
+   - Account actions
+     - Sign out
+     - Delete account (with confirmation)
+
+4. **StatsView** (`Features/Profile/Views/StatsView.swift`)
+   - Detailed breakdown of user activity
+   - Favorite genres chart
+   - Discovery streak
+
+#### Success Criteria
+- [ ] Users can view their profile
+- [ ] Users can update display name and avatar
+- [ ] Users can edit preferences
+- [ ] Stats display correctly
+- [ ] Sign out returns to login screen
+
+---
+
+## SPRINT 4: Developer Dashboard (Weeks 7-8)
+
+### Week 7: Game Upload
+
+#### Implementation Order
+
+1. **Developer Model** (`Core/Models/Developer.swift`)
+   ```swift
+   struct Developer: Identifiable, Codable {
+       let id: String
+       let userId: String?
+       let studioName: String
+       var publishedGameIds: [String]
+       var isVerified: Bool
+       // ... from DATA_MODELS.md
+   }
+   ```
+
+2. **DeveloperService** (`Core/Services/DeveloperService.swift`)
+   - `createDeveloper(_ developer)` → Developer
+   - `fetchDeveloper(userId: String)` → Developer?
+   - `updateDeveloper(_ developer)` → Void
+
+3. **Image Upload Utility** (`Core/Utilities/ImageUploader.swift`)
+   - Compress image to target size
+   - Upload to Firebase Storage
+   - Return download URL
+   - Show upload progress
+
+4. **GameUploadViewModel** (`Features/Developer/ViewModels/GameUploadViewModel.swift`)
+   - Multi-step form state
+   - Image picker integration
+   - Form validation
+   - Upload progress tracking
+
+5. **GameUploadView** (`Features/Developer/Views/GameUploadView.swift`)
+   - Step 1: Basic Info (title, description, genres)
+   - Step 2: Media (icon, cover, screenshots)
+   - Step 3: Release Details (status, date, pricing, links)
+   - Step 4: Preview and Submit
+   - Progress indicator (1/4, 2/4, etc.)
+   - Back/Next buttons
+
+6. **DeveloperDashboardView** (`Features/Developer/Views/DeveloperDashboardView.swift`)
+   - "Upload New Game" button
+   - List of uploaded games
+   - Basic stats per game
+
+#### Success Criteria
+- [ ] Developers can complete game upload flow
+- [ ] Images upload to Firebase Storage
+- [ ] Game document created in Firestore
+- [ ] Form validation works correctly
+- [ ] Upload progress shown
+
+---
+
+### Week 8: Basic Analytics
+
+#### Implementation Order
+
+1. **Analytics Models** (`Core/Models/AnalyticsEvent.swift`)
+   ```swift
+   struct AnalyticsEvent: Codable {
+       let eventId: String
+       let gameId: String
+       let developerId: String
+       let eventType: EventType
+       let timestamp: Date
+   }
+
+   struct GameAnalytics {
+       let gameId: String
+       let views: Int
+       let likes: Int
+       let wishlists: Int
+       let likeRate: Double
+   }
+   ```
+
+2. **AnalyticsService Updates** (`Core/Services/AnalyticsService.swift`)
+   - `fetchGameAnalytics(gameId, dateRange)` → GameAnalytics
+   - Aggregate events from Firestore
+   - Calculate metrics (views, likes, like rate)
+
+3. **AnalyticsViewModel** (`Features/Developer/ViewModels/AnalyticsViewModel.swift`)
+   - Load analytics for developer's games
+   - Date range filtering (7 days, 30 days, all time)
+   - Calculate totals across all games
+
+4. **AnalyticsView** (`Features/Developer/Views/AnalyticsView.swift`)
+   - Overview cards (total views, likes, wishlists)
+   - Per-game breakdown (list)
+   - Simple bar chart (optional, use SwiftUI Charts)
+
+#### Success Criteria
+- [ ] Developers can view analytics dashboard
+- [ ] Metrics display correctly (views, likes, wishlists)
+- [ ] Date range filtering works
+- [ ] Analytics update when new interactions occur
+
+---
+
+## SPRINT 5: MVP Polish (Week 9)
+
+### Focus: Bug Fixes, Error Handling, Testing
+
+#### Tasks
+
+1. **Error Handling**
+   - Implement `FindieError` enum with localized descriptions
+   - Wrap all Firebase calls in try-catch
+   - Show user-friendly error messages
+   - Add retry logic for network failures
+
+2. **Loading States**
+   - Add skeleton loaders for card stack
+   - Loading indicators for all async operations
+   - Pull-to-refresh on all lists
+   - Shimmer effects (optional)
+
+3. **Offline Support**
+   - Cache last viewed games locally (UserDefaults)
+   - Show cached content when offline
+   - Queue interactions when offline, sync when online
+   - Network status indicator
+
+4. **Firebase Security Rules**
+   - Deploy security rules from `FIREBASE_STRUCTURE.md`
+   - Test with different user roles
+   - Ensure users can only read/write their own data
+   - Protect developer operations
+
+5. **Unit Tests**
+   - Test ViewModels (AuthViewModel, DiscoveryViewModel, etc.)
+   - Test Services (GameService, UserService, etc.)
+   - Mock Firebase with protocols
+   - Aim for 70%+ coverage
+
+6. **Performance**
+   - Profile with Instruments
+   - Optimize image loading (resize before upload)
+   - Reduce Firestore reads (pagination)
+   - Test on older devices (iPhone SE)
+
+7. **Accessibility**
+   - Add VoiceOver labels
+   - Test with Dynamic Type
+   - Ensure sufficient color contrast
+   - Keyboard navigation support
+
+#### Success Criteria
+- [ ] No critical bugs
+- [ ] All error cases handled
+- [ ] App works offline (basic functionality)
+- [ ] Security rules deployed and tested
+- [ ] Unit tests passing (70%+ coverage)
+- [ ] Accessible to VoiceOver users
+
+---
+
+## SPRINT 6: Beta Launch (Week 10)
+
+### Tasks
+
+1. **TestFlight Setup**
+   - Configure App Store Connect
+   - Create beta testing group
+   - Upload build via Xcode Cloud or manual
+   - Write release notes
+
+2. **Beta Tester Recruitment**
+   - Invite friends and family
+   - Post on indie game communities
+   - Target 50 beta testers
+   - Create feedback form (Google Forms or Typeform)
+
+3. **Monitoring**
+   - Set up Firebase Crashlytics
+   - Monitor analytics daily
+   - Track KPIs (session length, games discovered, etc.)
+   - Review crash reports
+
+4. **Iteration**
+   - Fix critical bugs within 24 hours
+   - Collect and prioritize feedback
+   - Release TestFlight updates weekly
+
+#### Success Criteria
+- [ ] 50+ beta testers recruited
+- [ ] Crash-free rate >95%
+- [ ] Average session length >5 minutes
+- [ ] Positive feedback on core features
+
+---
+
+# PHASE 2: Growth Features (Weeks 11-18)
+
+## Goal
+Improve engagement with ML recommendations, platform sync, search, and social features.
+
+---
+
+## SPRINT 7: ML Recommendations (Weeks 11-12)
+
+### Week 11: Data Pipeline
+
+#### Implementation Order
+
+1. **Interaction Logging** (enhance existing `AnalyticsService`)
+   - Ensure all swipe actions logged to `interactions` collection
+   - Include context: user preferences, game genres, view duration
+   - Track session ID for grouping
+
+2. **Cloud Function: Aggregate Interactions** (Python/Node.js)
+   - Deploy scheduled function (runs daily)
+   - Build user-game interaction matrix
+   - Calculate user similarity scores (cosine similarity)
+   - Store results in Firestore for fast retrieval
+
+3. **Collaborative Filtering Algorithm** (Python backend)
+   - Implement user-user collaborative filtering
+   - Find top 50 similar users for each user
+   - Recommend games liked by similar users
+   - Store recommendations in cache collection
+
+#### Success Criteria
+- [ ] All interactions logged correctly
+- [ ] Cloud Function aggregates data daily
+- [ ] Collaborative filtering generates recommendations
+- [ ] Recommendations cached in Firestore
+
+---
+
+### Week 12: ML Model Integration
+
+#### Implementation Order
+
+1. **Train Neural Collaborative Filtering Model** (Python/TensorFlow)
+   - Export interaction data from Firestore
+   - Train model on user-game pairs
+   - Convert to TensorFlow Lite
+   - Upload to Firebase ML
+
+2. **Cloud Function: Generate Recommendations** (Node.js/Python)
+   - HTTPS callable function
+   - Input: userId, limit
+   - Run collaborative filtering algorithm
+   - Return ranked list of game IDs
+   - Cache results for 6 hours
+
+3. **Update RecommendationService** (`Core/Services/RecommendationService.swift`)
+   - Call `generateRecommendations` Cloud Function
+   - Fall back to genre-based if ML fails
+   - Implement caching layer
+   - Add diversity injection (20% exploration)
+
+4. **A/B Testing Framework** (optional)
+   - Split users 50/50 (control vs variant)
+   - Control: Genre-based recommendations
+   - Variant: ML-based recommendations
+   - Track CTR, like rate, session length
+
+#### Success Criteria
+- [ ] ML model trained and deployed
+- [ ] Cloud Function returns personalized recommendations
+- [ ] Discovery feed uses ML recommendations
+- [ ] Recommendation CTR >25%
+
+---
+
+## SPRINT 8: Platform Sync (Weeks 13-14)
+
+### Week 13: Steam Integration
+
+#### Implementation Order
+
+1. **Steam Auth** (`Core/Services/SteamAuthService.swift`)
+   - Implement Steam OpenID flow
+   - Handle callback URL (`findie://auth/steam`)
+   - Extract Steam ID from response
+   - Store in User document
+
+2. **Steam API Service** (`Core/Services/SteamAPIService.swift`)
+   - `fetchWishlist(steamId)` → [SteamGame]
+   - `fetchGameDetails(appId)` → SteamGameDetails
+   - `searchGame(title)` → [SteamSearchResult]
+   - Handle rate limiting and errors
+
+3. **Steam Sync Logic** (`Core/Services/SteamSyncService.swift`)
+   - Fetch Steam wishlist
+   - Match Steam games to Findie catalog (by title or Steam URL)
+   - Add matched games to user's Findie wishlist
+   - Return sync summary (added, skipped)
+
+4. **Sync UI** (`Features/Wishlist/Views/PlatformSyncView.swift`)
+   - "Connect Steam" button
+   - Steam login web view
+   - Sync progress indicator
+   - Results summary ("Added 25 games, skipped 5")
+
+#### Success Criteria
+- [ ] Users can authenticate with Steam
+- [ ] Steam wishlist fetched successfully
+- [ ] Games matched to Findie catalog
+- [ ] Matched games added to wishlist
+- [ ] Sync results displayed
+
+---
+
+### Week 14: itch.io Integration
+
+#### Implementation Order
+
+1. **itch.io Service** (`Core/Services/ItchioAPIService.swift`)
+   - `validateUsername(username)` → Bool
+   - `searchGames(query)` → [ItchioGame]
+   - `fetchGamesByDeveloper(username)` → [ItchioGame]
+   - Note: Limited API, may require scraping
+
+2. **itch.io Sync** (`Core/Services/ItchioSyncService.swift`)
+   - Similar to Steam sync
+   - One-way sync (itch.io → Findie)
+   - Manual refresh every 24 hours
+
+3. **Update PlatformSyncView**
+   - Add "Connect itch.io" section
+   - Username input field
+   - Validate username
+   - Trigger sync
+
+#### Success Criteria
+- [ ] Users can connect itch.io account
+- [ ] itch.io games fetched and matched
+- [ ] One-way sync works correctly
+
+---
+
+## SPRINT 9: Enhanced Features (Weeks 15-16)
+
+### Week 15: Search & Browse
+
+#### Implementation Order
+
+1. **Search UI** (`Features/Discovery/Views/SearchView.swift`)
+   - Search bar with real-time results
+   - Filter panel (genres, platforms, price, status)
+   - Sort options (trending, new, alphabetical)
+   - Results grid
+
+2. **GameService Search** (enhance `GameService.swift`)
+   - `searchGames(query, filters)` → [Game]
+   - Firestore compound queries
+   - Client-side title filtering (Firestore lacks full-text search)
+
+3. **Browse Categories** (`Features/Discovery/Views/BrowseView.swift`)
+   - Trending This Week
+   - New Releases
+   - Coming Soon
+   - Hidden Gems (high like rate, low views)
+   - Editor's Picks (manually curated)
+
+#### Success Criteria
+- [ ] Search returns relevant results
+- [ ] Filters work correctly
+- [ ] Browse categories populated
+- [ ] Search results paginated
+
+---
+
+### Week 16: Notifications
+
+#### Implementation Order
+
+1. **FCM Setup** (`Core/Services/PushNotificationService.swift`)
+   - Request notification permission
+   - Register for remote notifications
+   - Handle FCM token refresh
+   - Store token in User document
+
+2. **Cloud Function: Check Releases** (scheduled daily)
+   - Query wishlists with `notifyOnRelease: true`
+   - Check if games released (compare dates)
+   - Send push notification via FCM
+   - Create in-app notification document
+
+3. **Cloud Function: Price Tracking** (scheduled daily)
+   - Query wishlists with Steam/itch.io links
+   - Fetch current prices
+   - Compare with `priceAtAdd`
+   - Send notification if price dropped >20%
+
+4. **Notification Center UI** (`Features/Profile/Views/NotificationCenterView.swift`)
+   - List of notifications
+   - Mark as read
+   - Tap to navigate to game detail
+
+#### Success Criteria
+- [ ] Users receive push notifications for releases
+- [ ] Price drop notifications work
+- [ ] In-app notification center displays alerts
+- [ ] Users can manage notification preferences
+
+---
+
+## SPRINT 10: Social Features v1 (Weeks 17-18)
+
+### Week 17: Friend System
+
+#### Implementation Order
+
+1. **Friend Models** (extend User model)
+   ```swift
+   extension User {
+       var friendIds: [String]
+       var friendRequests: [String]  // pending requests
+   }
+   ```
+
+2. **FriendService** (`Core/Services/FriendService.swift`)
+   - `sendFriendRequest(to userId)` → Void
+   - `acceptFriendRequest(from userId)` → Void
+   - `removeFriend(userId)` → Void
+   - `fetchFriends(userId)` → [User]
+
+3. **Friend UI** (`Features/Profile/Views/FriendsView.swift`)
+   - Friends list
+   - Search users by username
+   - Friend requests (incoming)
+   - Send request button
+
+4. **Social Proof on Cards** (update `GameCardView.swift`)
+   - Query `interactions` where `action = .like` and `userId in friendIds`
+   - Display "3 friends liked this" badge
+
+#### Success Criteria
+- [ ] Users can send/accept friend requests
+- [ ] Friends list displays correctly
+- [ ] Social proof appears on game cards
+- [ ] Friend search works
+
+---
+
+### Week 18: Sharing
+
+#### Implementation Order
+
+1. **Deep Links** (configure in Xcode)
+   - Associated domains: `findie.app`
+   - URL scheme: `findie://game/{gameId}`
+   - Handle in `FindieApp.swift` with `.onOpenURL`
+
+2. **Share Sheet** (update `GameCardView.swift` and `GameDetailView.swift`)
+   - Add share button
+   - Generate share URL: `https://findie.app/game/{gameId}`
+   - Include game title and cover image
+   - Use iOS `UIActivityViewController`
+
+3. **Link Preview** (Firebase Hosting)
+   - Deploy simple web page at `/game/{gameId}`
+   - Open Graph meta tags for rich previews
+   - Redirect to App Store if app not installed
+
+#### Success Criteria
+- [ ] Share button opens iOS share sheet
+- [ ] Shared links open app if installed
+- [ ] Link previews show game info
+- [ ] Deep links navigate to game detail
+
+---
+
+# PHASE 3: Community & Polish (Weeks 19-28)
+
+## Goal
+Build community features, optimize performance, and launch on App Store.
+
+---
+
+## SPRINT 11: Activity Feed (Weeks 19-20)
+
+### Week 19: Feed Infrastructure
+
+#### Implementation Order
+
+1. **Activity Model** (`Core/Models/Activity.swift`)
+   ```swift
+   struct Activity: Identifiable, Codable {
+       let id: String
+       let userId: String
+       let activityType: ActivityType
+       let gameId: String?
+       let timestamp: Date
+       let metadata: [String: String]?
+   }
+
+   enum ActivityType: String, Codable {
+       case gameLiked, gameWishlisted, gameReviewed, friendAdded
+   }
+   ```
+
+2. **FeedService** (`Core/Services/FeedService.swift`)
+   - `fetchFeed(userId, limit)` → [Activity]
+   - Query activities from friends
+   - Sort by timestamp descending
+   - Pagination support
+
+3. **ActivityFeedView** (`Features/Social/Views/ActivityFeedView.swift`)
+   - List of activity items
+   - Pull-to-refresh
+   - Infinite scroll
+
+#### Success Criteria
+- [ ] Activity feed loads friend activities
+- [ ] Activities sorted by recency
+- [ ] Pagination works
+- [ ] Pull-to-refresh reloads feed
+
+---
+
+### Week 20: Interactions
+
+#### Implementation Order
+
+1. **Activity Interactions** (extend Activity model)
+   ```swift
+   extension Activity {
+       var likes: [String]  // userIds who liked
+       var commentCount: Int
+   }
+   ```
+
+2. **Comment Model** (`Core/Models/Comment.swift`)
+   ```swift
+   struct Comment: Identifiable, Codable {
+       let id: String
+       let activityId: String
+       let userId: String
+       let text: String
+       let timestamp: Date
+   }
+   ```
+
+3. **Update FeedService**
+   - `likeActivity(activityId, userId)` → Void
+   - `unlikeActivity(activityId, userId)` → Void
+   - `addComment(activityId, userId, text)` → Comment
+   - `fetchComments(activityId)` → [Comment]
+
+4. **Comment UI** (`Features/Social/Views/CommentThreadView.swift`)
+   - List of comments
+   - Text input for new comment
+   - Like button on activity
+
+#### Success Criteria
+- [ ] Users can like activities
+- [ ] Users can comment on activities
+- [ ] Comment thread displays correctly
+- [ ] Notifications sent for interactions
+
+---
+
+## SPRINT 12: User Reviews (Weeks 21-22)
+
+### Week 21: Review System
+
+#### Implementation Order
+
+1. **Review Model** (`Core/Models/Review.swift`)
+   ```swift
+   struct Review: Identifiable, Codable {
+       let id: String
+       let gameId: String
+       let userId: String
+       let rating: ReviewRating  // thumbsUp, thumbsDown
+       let text: String  // max 300 chars
+       let timestamp: Date
+   }
+   ```
+
+2. **ReviewService** (`Core/Services/ReviewService.swift`)
+   - `submitReview(gameId, userId, rating, text)` → Review
+   - `fetchReviews(gameId)` → [Review]
+   - `flagReview(reviewId, reason)` → Void
+
+3. **Review UI** (`Features/Discovery/Views/ReviewSubmitView.swift`)
+   - Thumbs up/down selector
+   - Text area (300 char limit)
+   - Submit button
+   - Character counter
+
+4. **Display Reviews** (update `GameDetailView.swift`)
+   - Show reviews from other users
+   - Helpful/not helpful buttons
+   - Flag inappropriate content
+
+#### Success Criteria
+- [ ] Users can submit reviews
+- [ ] Reviews display on game detail
+- [ ] Review moderation (flag) works
+- [ ] Character limit enforced
+
+---
+
+### Week 22: Developer Communication
+
+#### Implementation Order
+
+1. **Dev Log Model** (`Core/Models/DevLog.swift`)
+   ```swift
+   struct DevLog: Identifiable, Codable {
+       let id: String
+       let developerId: String
+       let gameId: String?
+       let title: String
+       let content: String
+       let timestamp: Date
+   }
+   ```
+
+2. **DevLogService** (`Core/Services/DevLogService.swift`)
+   - `createDevLog(developerId, title, content)` → DevLog
+   - `fetchDevLogs(developerId)` → [DevLog]
+   - Notify followers when dev log posted
+
+3. **Dev Log UI** (`Features/Developer/Views/DevLogView.swift`)
+   - Create new dev log (rich text editor)
+   - List of published dev logs
+   - Edit/delete existing logs
+
+4. **Developer Response to Reviews**
+   - Add `developerResponse` field to Review model
+   - Allow developers to reply to reviews on their games
+
+#### Success Criteria
+- [ ] Developers can post dev logs
+- [ ] Followers notified of new logs
+- [ ] Developers can respond to reviews
+- [ ] Dev logs display in feed
+
+---
+
+## SPRINT 13: Collections & Gamification (Weeks 23-24)
+
+### Week 23: Collections
+
+#### Implementation Order
+
+1. **Collection Model** (`Core/Models/Collection.swift`)
+   ```swift
+   struct Collection: Identifiable, Codable {
+       let id: String
+       let userId: String
+       let name: String
+       let description: String
+       var gameIds: [String]
+       let isPublic: Bool
+       let isFeatured: Bool  // curated by team
+   }
+   ```
+
+2. **CollectionService** (`Core/Services/CollectionService.swift`)
+   - `createCollection(name, description)` → Collection
+   - `addGameToCollection(collectionId, gameId)` → Void
+   - `removeGameFromCollection(collectionId, gameId)` → Void
+   - `fetchCollections(userId)` → [Collection]
+   - `fetchFeaturedCollections()` → [Collection]
+
+3. **Collection UI** (`Features/Collections/Views/`)
+   - `CollectionListView`: Browse collections
+   - `CollectionDetailView`: View games in collection
+   - `CreateCollectionView`: Create new collection
+   - `AddToCollectionView`: Add game to existing collection
+
+#### Success Criteria
+- [ ] Users can create collections
+- [ ] Users can add games to collections
+- [ ] Collections browsable
+- [ ] Featured collections curated by team
+
+---
+
+### Week 24: Gamification
+
+#### Implementation Order
+
+1. **Achievement Model** (`Core/Models/Achievement.swift`)
+   ```swift
+   struct Achievement: Identifiable, Codable {
+       let id: String
+       let name: String
+       let description: String
+       let iconName: String
+       let requirement: AchievementRequirement
+   }
+
+   enum AchievementRequirement {
+       case discoverGames(count: Int)
+       case wishlistGames(count: Int)
+       case discoveryStreak(days: Int)
+       case genreExplorer(genres: [Genre])
+   }
+   ```
+
+2. **Badge Logic** (`Core/Services/AchievementService.swift`)
+   - Check user stats against requirements
+   - Award badges when unlocked
+   - Store in User document
+   - Send notification when badge earned
+
+3. **Achievements UI** (`Features/Profile/Views/AchievementsView.swift`)
+   - Grid of achievements
+   - Locked (grayscale) vs unlocked (color)
+   - Progress bars for in-progress achievements
+
+#### Success Criteria
+- [ ] Achievements unlock based on user activity
+- [ ] Users notified when badge earned
+- [ ] Achievements display in profile
+- [ ] Leaderboard (optional)
+
+---
+
+## SPRINT 14: Performance & Optimization (Weeks 25-26)
+
+### Week 25: Performance Audit
+
+#### Tasks
+
+1. **Profiling with Instruments**
+   - Run Time Profiler
+   - Identify slow functions
+   - Optimize image loading
+   - Reduce memory usage
+
+2. **Firestore Optimization**
+   - Add indexes for all queries
+   - Implement pagination everywhere
+   - Use `limit()` on all queries
+   - Cache frequently accessed data locally
+
+3. **Cloud Functions Optimization**
+   - Minimize cold starts
+   - Set appropriate memory limits
+   - Batch operations where possible
+   - Use pub/sub for async tasks
+
+4. **Image Optimization**
+   - Resize images before upload (1920x1080 max)
+   - Use WebP format (if supported)
+   - Generate thumbnails (256x256, 512x512)
+   - Implement progressive loading
+
+#### Success Criteria
+- [ ] App launch time <2 seconds
+- [ ] Discovery swipes maintain 60 FPS
+- [ ] Memory usage <150 MB
+- [ ] Firestore reads reduced by 30%
+
+---
+
+### Week 26: Testing & QA
+
+#### Tasks
+
+1. **Unit Tests**
+   - Test all ViewModels
+   - Test all Services
+   - Test utility functions
+   - Aim for 80%+ coverage
+
+2. **UI Tests**
+   - Test critical flows (auth, discovery, wishlist)
+   - Test navigation
+   - Test error states
+
+3. **Accessibility Audit**
+   - VoiceOver support for all views
+   - Dynamic Type support
+   - Color contrast compliance (WCAG AA)
+   - Keyboard navigation
+
+4. **Device Testing**
+   - Test on iPhone SE (smallest screen)
+   - Test on iPhone 15 Pro Max (largest screen)
+   - Test on older iOS versions (iOS 16.0)
+
+5. **Load Testing**
+   - Simulate 1000+ concurrent users
+   - Test Firebase quota limits
+   - Test Cloud Functions under load
+
+#### Success Criteria
+- [ ] 80%+ test coverage
+- [ ] All critical flows have UI tests
+- [ ] VoiceOver fully supported
+- [ ] App works on all device sizes
+- [ ] Load tests pass
+
+---
+
+## SPRINT 15: App Store Launch (Weeks 27-28)
+
+### Week 27: Marketing Assets
+
+#### Tasks
+
+1. **App Icon**
+   - Design final app icon (1024x1024)
+   - Export all required sizes
+   - Test on home screen
+
+2. **Screenshots**
+   - Capture screenshots on all device sizes
+   - Add marketing text overlays
+   - Show key features (discovery, wishlist, developer tools)
+
+3. **Preview Video**
+   - Record 30-second app preview
+   - Show swipe interaction
+   - Show wishlist sync
+   - Show developer dashboard
+
+4. **App Store Copy**
+   - Write compelling description
+   - Highlight unique features
+   - Include keywords for ASO
+   - Create promotional text
+
+5. **Press Kit**
+   - Logo assets (various formats)
+   - Screenshots (high-res)
+   - App description and features
+   - Developer contact info
+
+#### Success Criteria
+- [ ] App icon approved by team
+- [ ] Screenshots look professional
+- [ ] Preview video captures core experience
+- [ ] App description compelling
+
+---
+
+### Week 28: Launch!
+
+#### Tasks
+
+1. **Final Testing**
+   - Complete final QA pass
+   - Fix any critical bugs
+   - Test on production Firebase
+
+2. **App Store Submission**
+   - Submit via App Store Connect
+   - Fill out all metadata
+   - Set pricing (free)
+   - Select categories (Games, Utilities)
+
+3. **Launch Plan**
+   - Prepare launch announcement
+   - Schedule social media posts
+   - Reach out to indie game press
+   - Email beta testers
+
+4. **Post-Launch Monitoring**
+   - Monitor crash reports hourly (first 48 hours)
+   - Respond to App Store reviews
+   - Track KPIs in Firebase Analytics
+   - Be ready for hotfixes
+
+#### Success Criteria
+- [ ] App approved by App Store
+- [ ] Launch announcement posted
+- [ ] Press coverage secured
+- [ ] Crash-free rate >98%
+
+---
+
+## Key Implementation Principles
+
+### 1. Always Start with Models
+Define data structures before UI or logic. Use `Codable` for Firebase compatibility.
+
+### 2. Services Layer Pattern
+All Firebase interactions go through Services. ViewModels never directly access Firebase.
+
+### 3. MVVM Strictly
+- **Model**: Data structures (Codable)
+- **View**: SwiftUI views (no business logic)
+- **ViewModel**: Business logic, `@Published` properties, async operations
+
+### 4. Error Handling
+```swift
+enum FindieError: LocalizedError {
+    case networkError
+    case authenticationError
+    case dataNotFound
+    case invalidData
+    case permissionDenied
+
+    var errorDescription: String? {
+        // User-friendly messages
+    }
+}
+```
+
+### 5. Async/Await Pattern
+All Firebase operations use Swift Concurrency:
+```swift
+func fetchGames() async throws -> [Game] {
+    let snapshot = try await db.collection("games").getDocuments()
+    return snapshot.documents.compactMap { try? $0.data(as: Game.self) }
+}
+```
+
+### 6. Loading States
+Always show loading indicators:
+```swift
+@Published var isLoading: Bool = false
+@Published var error: Error?
+
+func loadData() async {
+    isLoading = true
+    error = nil
+    do {
+        let data = try await service.fetchData()
+        // Update state
+    } catch {
+        self.error = error
+    }
+    isLoading = false
+}
+```
+
+### 7. Protocol-Oriented Design
+Make Services testable with protocols:
+```swift
+protocol GameServiceProtocol {
+    func fetchGame(id: String) async throws -> Game
+}
+
+class GameService: GameServiceProtocol {
+    static let shared = GameService()
+}
+```
+
+### 8. SwiftUI Best Practices
+- Use `@StateObject` for ViewModels owned by view
+- Use `@ObservedObject` for ViewModels passed in
+- Use `@EnvironmentObject` for app-wide singletons
+- Prefer `@Published` over manual `objectWillChange`
+
+### 9. Firebase Best Practices
+- Always use `.limit()` on queries
+- Create indexes for compound queries
+- Denormalize frequently accessed data
+- Use security rules to validate writes
+
+### 10. Testing Strategy
+- Unit test ViewModels with mock Services
+- Integration test Services with Firebase emulator
+- UI test critical user flows
+- Test error cases extensively
+
+---
+
+## Next Steps
+
+We're ready to begin Phase 1! Start with:
+1. Create Xcode project
+2. Add Firebase SDK
+3. Set up project structure
+4. Build design system
+
+Let's build something amazing! 🚀
